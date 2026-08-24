@@ -24,7 +24,7 @@ export const config = {
   },
 
   // Frontend URL (for CORS)
-  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+  frontendUrl: process.env.FRONTEND_URL?.trim() || 'http://localhost:5173',
 
   // Seat hold TTL (minutes)
   holdTtlMinutes: parseInt(process.env.HOLD_TTL_MINUTES || '10', 10),
@@ -39,7 +39,7 @@ export const config = {
   },
 
   // App URL (for email links)
-  appUrl: process.env.APP_URL || 'http://localhost:5173',
+  appUrl: process.env.APP_URL?.trim() || 'http://localhost:5173',
 };
 
 export function validateConfig(): void {
