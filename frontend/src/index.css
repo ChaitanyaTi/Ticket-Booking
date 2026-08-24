@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border-subtle;
+  }
+
+  body {
+    @apply bg-bg-app text-text-primary font-sans antialiased text-base leading-relaxed;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display text-text-primary;
+  }
+
+  h1 { @apply text-4xl md:text-5xl font-extrabold tracking-tight; }
+  h2 { @apply text-3xl md:text-4xl font-bold tracking-tight; }
+  h3 { @apply text-2xl md:text-3xl font-semibold tracking-tight; }
+  h4 { @apply text-xl font-semibold; }
+  h5 { @apply text-lg font-semibold; }
+  h6 { @apply text-base font-semibold; }
+
+  ::selection {
+    @apply bg-accent-primary/30 text-text-primary;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent-primary ring-offset-2 ring-offset-bg-app;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl font-sans font-medium transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-bg-app disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md active:scale-[0.97];
+  }
+
+  .btn-primary {
+    @apply btn bg-accent-primary text-white hover:bg-accent-primary/90 focus-visible:ring-accent-primary;
+  }
+
+  .btn-secondary {
+    @apply btn bg-surface border border-accent-primary text-accent-primary hover:bg-accent-primary/5 focus-visible:ring-accent-primary;
+  }
+
+  .btn-ghost {
+    @apply btn text-text-primary hover:bg-surface/50 focus-visible:ring-text-muted shadow-none hover:shadow-none;
+  }
+
+  .btn-danger {
+    @apply btn bg-accent-warm text-white hover:bg-accent-warm/90 focus-visible:ring-accent-warm;
+  }
+
+  .input {
+    @apply w-full px-4 py-2.5 rounded-2xl bg-surface border border-border-subtle text-text-primary placeholder-text-muted/50 transition-all duration-200 focus:border-accent-primary focus:ring-2 focus:ring-accent-primary/20 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-text-muted mb-1.5;
+  }
+
+  .card {
+    @apply bg-surface rounded-2xl p-6 transition-all duration-200 shadow-sm hover:shadow-md hover:ring-2 hover:ring-accent-primary hover:ring-offset-2 hover:ring-offset-bg-app;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium font-mono shadow-sm;
+  }
+
+  .badge-available {
+    @apply badge bg-state-available/10 text-state-available border border-state-available/20;
+  }
+
+  .badge-held {
+    @apply badge bg-state-held/10 text-state-held border border-state-held/20;
+  }
+
+  .badge-booked {
+    @apply badge bg-state-available/10 text-state-available border border-state-available/20;
+  }
+
+  .badge-concert {
+    @apply badge bg-pink-500/10 text-pink-500 border-pink-500/20;
+  }
+
+  .badge-waitlist {
+    @apply badge bg-accent-warm/10 text-accent-warm border border-accent-warm/20;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}

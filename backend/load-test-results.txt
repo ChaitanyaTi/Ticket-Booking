@@ -1,0 +1,38 @@
+🔬 Concurrency Load Test
+   Show ID: test_show_1787435273567
+   Seat ID: cmt4wt8ci000a33xkq5qqlyjg
+   Concurrency: 20 parallel requests
+
+⚠️  Seat is HELD, resetting to AVAILABLE...
+🚀 Firing 20 concurrent requests...
+
+📊 Results (3355ms):
+   ✅ Successful: 1
+   ❌ Failed: 19
+      - 409 Conflict (expected): 19
+      - Other errors: 0
+
+✅ TEST PASSED: Exactly 1 request should succeed
+   Expected: 1 success, 19 conflicts
+   Actual:   1 success, 19 conflicts
+
+📋 Successful response:
+{
+  "success": true,
+  "data": {
+    "holdId": "hold_test_show_1787435273567_cmt507hn20000tkcir87mc042_1787441013147",
+    "seats": [
+      {
+        "showSeatId": "cmt4wt8ci000a33xkq5qqlyjg",
+        "seatId": "seat_test_venue_1787435272127_p_0_0",
+        "rowLabel": "A",
+        "seatNumber": 1,
+        "categoryName": "Premium",
+        "holdExpiresAt": "2026-08-22T23:33:31.823Z"
+      }
+    ],
+    "expiresAt": "2026-08-22T23:33:31.823Z"
+  }
+}
+
+🧹 Cleaning up hold hold_test_show_1787435273567_cmt507hn20000tkcir87mc042_1787441013147...
