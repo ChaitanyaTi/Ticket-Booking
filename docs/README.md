@@ -1,102 +1,486 @@
 # Ticket Booking System
 
-A full-stack, highly concurrent seat-booking engine built for high-traffic ticket sales. The system is designed to prevent race conditions during checkout using row-level database locking and strict transactional integrity.
+A full-stack ticket booking platform designed to handle real-world ticket booking workflows with a strong focus on **seat inventory consistency, concurrency control, temporary seat holds, waitlist allocation, and real-time updates**.
 
-## Tech Stack
-- **Backend**: Node.js, Express, TypeScript, Prisma (PostgreSQL), Redis (for Socket.io state), Socket.io (real-time seat state broadcasting)
-- **Frontend**: React (Vite), TypeScript, TailwindCSS, Zustand, Recharts, Socket.io-client
+The application allows customers to browse events, select seats, temporarily hold them during checkout, complete bookings, cancel bookings, and join a waitlist when seats are unavailable. Organisers can manage events and shows, while administrators can manage venues.
 
-## Project Setup
+---
 
-### 1. Clone & Dependencies
-Clone the repository, then install dependencies for both backend and frontend:
-```bash
-cd backend && npm install
-cd ../frontend && npm install
+## Live Project
+
+- **Frontend:** https://ticket-booking-alpha-bice.vercel.app/
+- **GitHub Repository:** https://github.com/ChaitanyaTi/Ticket-Booking
+- **Backend:** Deployed on Render
+
+---
+
+## Features
+
+- User registration and login using JWT authentication
+- Role-based access for Customer, Organiser, and Admin
+- Event management
+- Show management
+- Venue management
+- Interactive seat map
+- Temporary seat holds
+- Automatic expiration of expired seat holds
+- Booking confirmation
+- Booking history
+- Booking cancellation
+- Waitlist management
+- Automatic waitlist allocation
+- Time-limited waitlist offers
+- SMTP email notifications
+- QR-code based booking/ticket information
+- Real-time seat availability using Socket.IO
+- PostgreSQL database using Prisma ORM
+- Redis integration
+- Background processing for expired holds and offers
+- Concurrency-safe seat booking
+- Concurrency-safe waitlist allocation
+- Concurrency-safe waitlist offer acceptance
+
+---
+
+## Technology Stack
+
+### Frontend
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- Zustand
+- Socket.IO Client
+
+### Backend
+- Node.js
+- Express
+- TypeScript
+- Prisma
+- PostgreSQL
+- Redis
+- Socket.IO
+- JWT
+
+### Email
+- SMTP
+
+### Deployment
+- Vercel
+- Render
+
+---
+
+## System Architecture
+
+```
+                         +----------------------+
+                         |      React App       |
+                         | React + TypeScript   |
+                         +----------+-----------+
+                                    |
+                         REST API / Socket.IO
+                                    |
+                                    v
+                         +----------------------+
+                         |      Backend API     |
+                         | Node + Express + TS  |
+                         +----------+-----------+
+                                    |
+                 +------------------+------------------+
+                 |                  |                  |
+                 v                  v                  v
+        +----------------+  +--------------+  +--------------+
+        |   PostgreSQL   |  |    Redis     |  |     SMTP     |
+        |     Prisma     |  |              |  |    Email     |
+        +----------------+  +--------------+  +--------------+
 ```
 
-### 2. Environment Variables
-Copy the `.env.example` files to `.env` in both directories and update the variables.
-```bash
-# In backend/
-cp .env.example .env
+The backend is organised into independent modules for authentication, events, shows, venues, bookings, waitlists, and email.
 
-# In frontend/
-cp .env.example .env
+---
+
+## Core Booking Flow
+
+A seat follows the following lifecycle:
+
 ```
-Ensure you have a PostgreSQL database and Redis server running. Update the `DATABASE_URL` and `REDIS_HOST`/`REDIS_PORT` in `backend/.env`.
+AVAILABLE
+    |
+    v
+  HELD
+    |
+    +----------------+
+    |                |
+    v                v
+ BOOKED           EXPIRED
+                     |
+                     v
+                 AVAILABLE
+```
 
-### 3. Database Migration & Seeding
-Push the schema to the database and generate the Prisma Client:
+When a customer selects an available seat, the backend attempts to place it in the `HELD` state.
+
+The seat remains temporarily held while the customer completes checkout.
+
+- If the booking succeeds: `HELD -> BOOKED`
+- If the hold expires before booking: `HELD -> AVAILABLE`
+
+This prevents abandoned checkouts from permanently blocking seats.
+
+---
+
+## Concurrency Control
+
+Concurrency handling is one of the primary design considerations of the system.
+
+The most important race condition is when two users attempt to reserve the same seat simultaneously.
+
+```
+User A ------------------+
+                          |
+                          v
+                      Same Seat
+                          |
+                          v
+                  Database Transaction
+                          ^
+                          |
+User B ------------------+
+                          |
+                          v
+                 PostgreSQL Serialization
+                          |
+                  +-------+-------+
+                  |               |
+                  v               v
+              One succeeds    One fails
+```
+
+Critical seat operations are executed using database transactions with PostgreSQL Serializable isolation.
+
+This ensures that two concurrent transactions cannot both successfully reserve the same seat.
+
+The system therefore prevents:
+
+- Double seat booking
+- Duplicate seat holds
+- Inconsistent seat states
+- Incorrect inventory after concurrent requests
+
+---
+
+## Temporary Seat Holds
+
+A selected seat is not immediately treated as a confirmed booking. Instead, the seat is temporarily held for the customer.
+
+The hold stores information such as:
+
+- User
+- Seat
+- Show
+- Hold expiration time
+- Current seat state
+
+The hold has a limited lifetime. A background process periodically checks for expired holds and releases their seats.
+
+This ensures that seats are automatically returned to the available inventory when a customer abandons checkout.
+
+---
+
+## Booking Cancellation
+
+When a confirmed booking is cancelled, the system first releases the associated seats.
+
+```
+BOOKED
+   |
+   v
+CANCELLED
+   |
+   v
+AVAILABLE
+   |
+   v
+Waitlist Processing
+```
+
+The seat release is completed before waitlist allocation is triggered. This ordering prevents the waitlist process from attempting to allocate a seat before it has actually become available.
+
+---
+
+## Waitlist System
+
+When seats are unavailable, customers can join the waitlist. Waitlist entries are maintained in chronological order.
+
+```
+Customer 1 -> WAITING
+Customer 2 -> WAITING
+Customer 3 -> WAITING
+```
+
+When a seat becomes available, the earliest eligible waiting customer is selected.
+
+```
+Seat Released
+     |
+     v
+Find earliest WAITING entry
+     |
+     v
+Claim entry
+     |
+     v
+Create OFFER
+     |
+     v
+Notify customer
+```
+
+This provides fair, queue-based allocation.
+
+### Waitlist Concurrency
+
+Multiple seats can become available at the same time, which can cause multiple processes to attempt to claim the same waitlist entry.
+
+To handle this, waitlist entries are claimed using conditional updates. The state transition is effectively:
+
+```
+WAITING -> OFFERED
+```
+
+The update succeeds only if the entry is still `WAITING`. If another process has already claimed the entry, the conditional update affects zero rows and the current process retries with the next eligible entry.
+
+This prevents:
+
+- Duplicate waitlist offers
+- Multiple processes claiming the same user
+- Incorrect waitlist ordering
+
+### Waitlist Offer Acceptance
+
+A waitlist offer is valid only for a limited period. The offer lifecycle is:
+
+```
+WAITING
+   |
+   v
+OFFERED
+   |
+   +----------------+
+   |                |
+   v                v
+ACCEPTED         EXPIRED
+   |                |
+   v                v
+BOOKED        Next Waitlist User
+```
+
+When the customer accepts an offer, the backend verifies:
+
+- The offer exists
+- The offer is still pending
+- The offer has not expired
+- The seat is still held for the intended user
+- The offer has not already been accepted
+
+The offer is then conditionally changed from:
+
+```
+PENDING -> ACCEPTED
+```
+
+Only the request that successfully performs this transition can continue with the booking.
+
+This prevents duplicate bookings caused by:
+
+- Multiple clicks
+- Browser retries
+- Concurrent requests
+- Reusing an already accepted offer
+
+### Expired Waitlist Offers
+
+If a customer does not accept the offer before it expires, the offer is marked as expired. The seat is then made available for the next eligible waitlisted customer.
+
+```
+OFFERED
+   |
+   v
+EXPIRED
+   |
+   v
+Seat Released
+   |
+   v
+Next WAITING Customer
+```
+
+This prevents seats from remaining locked because a waitlisted customer did not respond.
+
+---
+
+## Real-Time Seat Updates
+
+Socket.IO is used to provide real-time seat availability updates.
+
+Important seat state changes can be broadcast to connected clients, including:
+
+- Seat held
+- Seat booked
+- Seat released
+- Hold expired
+- Waitlist allocation
+
+This allows multiple users viewing the same show to receive updated seat information without manually refreshing the page.
+
+---
+
+## Background Processing
+
+The backend contains background processing for time-dependent operations. The main jobs include:
+
+- Detecting expired seat holds
+- Releasing expired holds
+- Detecting expired waitlist offers
+- Expiring offers
+- Triggering the next waitlist allocation
+
+These processes ensure that temporary resources are automatically cleaned up.
+
+The relevant implementation is located in `backend/src/jobs/`.
+
+---
+
+## Email Notifications
+
+The application uses SMTP for email notifications. SMTP is used for relevant booking and waitlist communication, including waitlist offer notifications.
+
+Email credentials are provided through environment variables and are not hard-coded into the application. Production credentials are stored in the deployment environment and are not committed to GitHub.
+
+---
+
+## QR Code
+
+The booking system supports QR-code based ticket/booking information. The generated QR information is associated with the confirmed booking and can be used as part of the ticket verification flow.
+
+---
+
+## Project Structure
+
+```
+Ticket-Booking/
+│
+├── backend/
+│   ├── prisma/
+│   │   ├── schema.prisma
+│   │   └── seed.ts
+│   │
+│   ├── src/
+│   │   ├── config/
+│   │   ├── jobs/
+│   │   ├── middleware/
+│   │   ├── modules/
+│   │   │   ├── auth/
+│   │   │   ├── bookings/
+│   │   │   ├── email/
+│   │   │   ├── events/
+│   │   │   ├── shows/
+│   │   │   ├── venues/
+│   │   │   └── waitlist/
+│   │   └── utils/
+│   │
+│   ├── package.json
+│   ├── render.yaml
+│   └── tsconfig.json
+│
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── pages/
+│   │   ├── store/
+│   │   └── utils/
+│   ├── package.json
+│   └── vite.config.ts
+│
+├── docs/
+│   ├── API_DOCS.md
+│   ├── DB_SCHEMA.md
+│   ├── README.md
+│   └── SYSTEM_DESIGN.md
+│
+└── .gitignore
+```
+
+---
+
+## Local Setup
+
+### Prerequisites
+
+Install:
+
+- Node.js
+- npm
+- PostgreSQL
+- Redis
+
+### Clone Repository
+
+```bash
+git clone https://github.com/ChaitanyaTi/Ticket-Booking.git
+cd Ticket-Booking
+```
+
+### Backend Setup
+
 ```bash
 cd backend
-npx prisma migrate dev
-```
-To populate the database with realistic demo data, including venues, events, and bookings, run the seed script:
-```bash
-npm run prisma:seed
+npm install
 ```
 
-### 4. Demo Accounts
-The seed script provisions several accounts with realistic data. You can log in using the following credentials without registering:
+Create a `.env` file using `.env.example`. Configure the required environment variables:
 
-**Password for all accounts:** `Password123!`
+```env
+DATABASE_URL=your_postgresql_connection_string
+REDIS_URL=your_redis_connection_string
+JWT_SECRET=your_jwt_secret
+GMAIL_USER=your_smtp_email
+GMAIL_APP_PASSWORD=your_smtp_app_password
+FRONTEND_URL=http://localhost:5173
+APP_URL=http://localhost:5173
+```
 
-| Role | Email |
-| :--- | :--- |
-| **Admin** | `admin@demo.com` |
-| **Organiser** | `organiser1@demo.com`<br>`organiser2@demo.com` |
-| **Customer** | `customer1@demo.com`<br>`customer2@demo.com`<br>`customer3@demo.com` |
+Generate Prisma Client:
 
-### 5. Running Locally
-You will need to run the backend and frontend simultaneously.
-**Backend**:
 ```bash
-cd backend
+npx prisma generate
+```
+
+Apply the database schema:
+
+```bash
+npx prisma db push
+```
+
+Start the development server:
+
+```bash
 npm run dev
 ```
-**Frontend**:
+
+### Frontend Setup
+
+Open another terminal:
+
 ```bash
 cd frontend
-npm run dev
+npm install
 ```
 
-The frontend will be available at `http://localhost:5173`. 
-The backend API will run at `http://localhost:4000`.
-
-## Testing Concurrency
-A core feature of the system is absolute prevention of double-booking. To verify this, a concurrency load test script is provided that fires 20 parallel requests for the exact same seat at the exact same millisecond.
-
-To run the load test:
-1. Ensure your backend is running.
-2. Ensure you have seeded the database (which creates a test show and seats).
-3. Run the load test from the `backend/` directory, providing a valid Show ID and ShowSeat ID:
+Create a `.env` file using `.env.example` and configure the backend API URL.
 
 ```bash
-cd backend
-npx tsx load-test-hold.ts <showId> <showSeatId> 20
-```
-
-*You can retrieve the `showId` and `showSeatId` from the database directly, or check the terminal output from `npx prisma db seed`, which logs a test Show ID you can use.*
-
-### Expected Results
-The script asserts that exactly **1** request succeeds, and the other 19 fail with a `409 Conflict`. 
-
-```
-🔬 Concurrency Load Test
-   Show ID: test_show_...
-   Seat ID: cmt4wt8...
-   Concurrency: 20 parallel requests
-
-🚀 Firing 20 concurrent requests...
-
-📊 Results (3355ms):
-   ✅ Successful: 1
-   ❌ Failed: 19
-      - 409 Conflict (expected): 19
-      - Other errors: 0
-
-✅ TEST PASSED: Exactly 1 request should succeed
-   Expected: 1 success, 19 conflicts
-   Actual:   1 success, 19 conflicts
+npm run dev
 ```

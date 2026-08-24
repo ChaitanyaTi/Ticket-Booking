@@ -1,44 +1,88 @@
 # System Design
 
-This document outlines the architectural decisions powering the critical paths of the ticket booking engine, specifically focusing on concurrency, seat holds, and the waitlist flow.
+This document describes the architecture and correctness mechanisms used in the ticket booking system, with particular focus on seat holds, TTL-based expiry, concurrency prevention, waitlist assignment, and time-limited waitlist offers.
 
 ## 1. Concurrency Prevention
 
-The core challenge in a high-traffic ticketing system is preventing "double-booking" when hundreds of users attempt to select the same seat simultaneously. 
+The primary concurrency problem is preventing two users from successfully holding or booking the same seat at the same time.
 
-We solve this entirely at the database level using **Row-Level Locking** within a strictly isolated transaction. When a request hits the `POST /api/shows/:id/hold` endpoint:
-1. The backend opens a database transaction using Prisma's `Serializable` isolation level.
-2. It fetches the requested `ShowSeat` records.
-3. If any seat's status is not `AVAILABLE`, the transaction immediately aborts.
-4. It updates the seats to `HELD`.
+When a user requests a seat hold, the backend performs the operation inside a Prisma database transaction using PostgreSQL's `Serializable` transaction isolation level.
 
-Because of the `Serializable` isolation level, the underlying PostgreSQL database prevents race conditions. If two concurrent requests try to lock the exact same `ShowSeat` row at the exact same millisecond, Postgres throws a write conflict (`P2034` in Prisma). The backend intercepts this conflict and gracefully returns a `409 Conflict` HTTP response to the losing request. The load-test script in this repository actively proves that out of 20 concurrent identical requests, exactly 1 succeeds and 19 fail safely without data corruption.
+The transaction:
+
+1. Identifies the requested `ShowSeat` records.
+2. Verifies that every requested seat is currently `AVAILABLE`.
+3. Updates the seats to `HELD`.
+4. Records the user holding the seats and the hold expiration time.
+
+Because the transaction uses `Serializable` isolation, conflicting concurrent transactions cannot both successfully commit. PostgreSQL detects the serialization conflict and one transaction fails. The backend handles Prisma's serialization conflict (`P2034`) and returns an appropriate conflict response.
+
+This ensures that two users cannot successfully hold the same seat simultaneously and prevents duplicate seat allocation.
+
+The repository also contains a concurrency/load-test script that can be used to verify this behavior by sending multiple simultaneous requests for the same seat. The expected result is that only one request succeeds while the remaining requests fail safely without creating duplicate holds or bookings.
 
 ## 2. Seat Hold and TTL Mechanism
 
-To prevent users from hoarding tickets in their cart without buying them, the system enforces a strict Time-To-Live (TTL) on held seats.
+A seat selected during checkout is temporarily held rather than immediately becoming permanently booked.
 
-When a seat is successfully held, the `ShowSeat` is updated with `heldByUserId`, `heldAt` (current time), and `holdExpiresAt` (current time + 10 minutes, configurable via `HOLD_TTL_MINUTES`).
+When a hold is created, the corresponding `ShowSeat` record stores:
 
-**The Cleanup Loop**:
-A background worker (running via `setInterval` in the Node.js backend) acts as a sweeper. Every 60 seconds, it queries for all `ShowSeat` records where `status = 'HELD'` and `holdExpiresAt < NOW()`. 
-- These seats are instantly bulk-updated back to `AVAILABLE`, stripping the `heldByUserId`.
-- Real-time Socket.io events (`seat:released`) are broadcast to all clients currently viewing that show's seat map, causing the seat to instantly turn green on their screens without requiring a page refresh.
+- `status = HELD`
+- `heldByUserId`
+- `heldAt`
+- `holdExpiresAt`
 
-## 3. Waitlist Auto-Assignment Flow
+The hold duration is configurable through `HOLD_TTL_MINUTES`. This prevents users from keeping seats reserved indefinitely without completing the booking process.
 
-When a specific seat category (e.g., "VIP") sells out, users can opt into a waitlist. Their request is logged in the `WaitlistEntry` table with a 1-based `position` representing their place in the queue.
+A background cleanup process periodically searches for expired holds. When a held seat has passed its `holdExpiresAt` timestamp, the system releases it by changing its status back to `AVAILABLE` and clearing the hold ownership information.
 
-The auto-assignment is deeply integrated into the seat release mechanisms. A seat can become available either because a cart TTL expired, or because a user explicitly released it. When a seat becomes available:
-1. The system checks the `WaitlistEntry` table for users waiting for that specific `showId` and `categoryId` with `status = 'WAITING'`.
-2. It queries for the user with the lowest `position` (the first person in line).
-3. If a match is found, the system *does not* make the seat available to the public. Instead, it creates a `WaitlistOffer`.
+After a hold is released, the system emits a Socket.IO event so connected clients viewing the seat map can receive the updated seat status in real time without requiring a page refresh.
 
-## 4. Time-Limited Offer Handling
+If the released seat has eligible waitlisted users, the waitlist allocation flow is triggered instead of immediately exposing the seat to the general public.
 
-A `WaitlistOffer` represents an exclusive right to purchase a freed-up ticket. 
+This provides both automatic inventory recovery and real-time seat availability updates.
 
-1. **Offer Creation**: The system generates a unique, unguessable `offerToken` (UUID) and creates a `WaitlistOffer` record linking the user's `WaitlistEntry` to the specific `ShowSeat`. The `WaitlistEntry` status updates to `OFFERED`.
-2. **TTL Enforcement**: The offer has an `expiresAt` timestamp (15 minutes, configurable via `WAITLIST_OFFER_TTL_MINUTES`). The system automatically fires an email to the user (via Resend) containing a link with the unique token: `/waitlist/:token`.
-3. **Acceptance**: When the user clicks the link, the frontend calls `GET /waitlist-offers/:token` to validate it, rendering a checkout screen. If they accept, `POST /waitlist-offers/:token/accept` completes the transaction, marking the offer `ACCEPTED` and generating a formal `Booking`.
-4. **Expiry**: Just like seat holds, a background sweeper checks for `PENDING` offers where `expiresAt < NOW()`. If an offer expires, it is marked `EXPIRED`, the user's `WaitlistEntry` is marked `EXPIRED`, and the seat goes back through the auto-assignment flow—automatically being offered to the *next* person in the queue. If the queue is empty, the seat is finally released to the general public.
+## 3. Waitlist Auto-Assignment
+
+When seats of a particular category are unavailable, users can join the waitlist for that show and category.
+
+Each waitlist request is stored as a `WaitlistEntry` with a queue position and a status such as `WAITING` or `OFFERED`.
+
+When a seat becomes available because of booking cancellation or expiration of a seat hold, the system checks for the earliest eligible `WAITING` entry for the same show and seat category.
+
+The allocation process is performed transactionally:
+
+1. Find the earliest eligible waiting entry.
+2. Atomically claim the waitlist entry by changing its status from `WAITING` to `OFFERED`.
+3. Atomically transition the released seat from `AVAILABLE` to `HELD`.
+4. Create a `WaitlistOffer` for that user and seat.
+5. Send the user an email notification through the application's SMTP email service.
+
+Optimistic concurrency checks ensure that if multiple seat releases attempt to process the same waitlist entry simultaneously, only one transaction can successfully claim it. If another transaction has already claimed the entry, the failed attempt retries the allocation process and selects the next eligible entry.
+
+This prevents duplicate offers and preserves the chronological ordering of the waitlist.
+
+## 4. Time-Limited Waitlist Offers
+
+A `WaitlistOffer` gives a specific waitlisted user a temporary opportunity to purchase an available seat.
+
+When an offer is created:
+
+- A unique offer token is generated.
+- The waitlist entry changes from `WAITING` to `OFFERED`.
+- The offer stores an `expiresAt` timestamp.
+- The seat is reserved for that offer.
+- An email notification is sent through the application's SMTP email service.
+- The email contains a unique link to the waitlist offer.
+
+The offer duration is configurable through `WAITLIST_OFFER_TTL_MINUTES`.
+
+When the user accepts the offer, the backend validates the token and expiration and performs the acceptance inside a database transaction. The offer is conditionally changed from `PENDING` to `ACCEPTED`, and the corresponding seat is verified as being held by the intended user before the booking is created.
+
+The conditional update makes the acceptance operation concurrency-safe. If multiple requests attempt to accept the same offer simultaneously, only the request that successfully claims the pending offer can proceed to create the booking. This prevents duplicate bookings caused by repeated clicks or concurrent requests.
+
+A background worker checks for expired offers. When an offer expires, it is marked as `EXPIRED` and the associated waitlist entry is updated accordingly. The seat is then passed back through the waitlist allocation process so the next eligible waiting user can receive the opportunity.
+
+If no eligible waitlisted user remains, the seat becomes available to the general public.
+
+This design ensures that released inventory is handled consistently while providing fair, chronological, and time-limited opportunities to waitlisted customers.
