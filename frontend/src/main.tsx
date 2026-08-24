@@ -17,18 +17,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         className="font-body"
         toastOptions={{
           className: 'bg-surface border border-surface/50 text-text-primary shadow-sm',
-          success: {
-            iconTheme: {
-              primary: '#22C55E',
-              secondary: '#FFFFFF',
-            },
-          },
-          error: {
-            iconTheme: {
-              primary: '#FF6B4A',
-              secondary: '#FFFFFF',
-            },
-          },
         }}
       />
     </BrowserRouter>
