@@ -1,6 +1,6 @@
 import { useAuthStore } from '../store/authStore';
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+const API_BASE = import.meta.env.PROD ? 'https://ticket-booking-backend-3v95.onrender.com/api' : '/api';
 
 class ApiError extends Error {
   constructor(

@@ -17,7 +17,7 @@ export function useSocket() {
 
     if (!socketRef.current) {
       // Typically VITE_API_URL is like http://localhost:4000/api
-      const url = import.meta.env.VITE_API_URL?.replace(/\/api$/, '') || 'http://localhost:4000';
+      const url = import.meta.env.PROD ? 'https://ticket-booking-backend-3v95.onrender.com' : 'http://localhost:4000';
       
       socketRef.current = io(url, {
         auth: { token },
