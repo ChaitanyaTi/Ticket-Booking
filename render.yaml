@@ -2,6 +2,7 @@ services:
   - type: web
     name: ticket-booking-backend
     env: node
+    plan: free
     region: ohio # Default US region
     rootDir: backend
     buildCommand: npm install && npm run prisma:generate && npm run build
