@@ -14,7 +14,7 @@ The application allows customers to browse events, select seats, temporarily hol
 
 ---
 
-## 🔐 Test Credentials
+## Test Credentials
 
 The database seed script creates several test accounts with different roles. You can use these to test the application locally.
 
