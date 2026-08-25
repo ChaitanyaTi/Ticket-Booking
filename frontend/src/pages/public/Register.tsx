@@ -156,7 +156,7 @@ export function Register() {
                   value="CUSTOMER"
                   className="sr-only peer"
                 />
-                <div className="peer-checked:border-accent-marquee peer-checked:bg-accent-marquee/10 border border-surface/50 rounded-2xl p-4 text-center transition-all">
+                <div className="peer-checked:border-accent-primary peer-checked:bg-accent-primary/10 border-2 border-transparent peer-checked:border-accent-primary rounded-2xl p-4 text-center transition-all bg-surface/50 hover:bg-surface/80">
                   <p className="font-medium text-text-primary">Customer</p>
                   <p className="text-xs text-text-muted mt-1">Book tickets</p>
                 </div>
@@ -168,7 +168,7 @@ export function Register() {
                   value="ORGANISER"
                   className="sr-only peer"
                 />
-                <div className="peer-checked:border-accent-marquee peer-checked:bg-accent-marquee/10 border border-surface/50 rounded-2xl p-4 text-center transition-all">
+                <div className="peer-checked:border-accent-primary peer-checked:bg-accent-primary/10 border-2 border-transparent peer-checked:border-accent-primary rounded-2xl p-4 text-center transition-all bg-surface/50 hover:bg-surface/80">
                   <p className="font-medium text-text-primary">Organiser</p>
                   <p className="text-xs text-text-muted mt-1">Create events</p>
                 </div>
@@ -183,7 +183,7 @@ export function Register() {
 
         <p className="mt-6 text-center text-text-muted">
           Already have an account?{' '}
-          <Link to="/login" className="text-accent-marquee hover:underline font-medium">
+          <Link to="/login" className="text-accent-primary hover:underline font-medium">
             Sign in
           </Link>
         </p>
