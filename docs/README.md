@@ -14,6 +14,28 @@ The application allows customers to browse events, select seats, temporarily hol
 
 ---
 
+## 🔐 Test Credentials
+
+The database seed script creates several test accounts with different roles. You can use these to test the application locally.
+
+**All accounts use the same password:** `Password123!`
+
+### Administrator
+* **Email:** `admin@demo.com`
+
+### Organisers (Event Creators)
+* **Email 1:** `organiser1@demo.com` (LiveNation)
+* **Email 2:** `organiser2@demo.com` (Indie Events)
+
+### Customers (Ticket Buyers)
+* **Email 1:** `customer1@demo.com`
+* **Email 2:** `customer2@demo.com`
+* **Email 3:** `customer3@demo.com`
+
+> **Note:** You can also create new customer or organiser accounts by using the Sign Up page in the application. However, the admin account mentioned above is the only way to access administrator privileges.
+
+---
+
 ## Features
 
 - User registration and login using JWT authentication
